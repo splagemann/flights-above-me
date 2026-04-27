@@ -38,6 +38,39 @@ function createBoundingBox(lat, lon) {
   };
 }
 
+function isFiniteNumber(value) {
+  return Number.isFinite(value);
+}
+
+function parseNumberParam(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return isFiniteNumber(parsed) ? parsed : null;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseBounds(query, fallbackLat, fallbackLon) {
+  const lamin = parseNumberParam(query.lamin);
+  const lamax = parseNumberParam(query.lamax);
+  const lomin = parseNumberParam(query.lomin);
+  const lomax = parseNumberParam(query.lomax);
+
+  if ([lamin, lamax, lomin, lomax].every((value) => value != null)) {
+    const south = clamp(Math.min(lamin, lamax), -90, 90);
+    const north = clamp(Math.max(lamin, lamax), -90, 90);
+    const west = clamp(Math.min(lomin, lomax), -180, 180);
+    const east = clamp(Math.max(lomin, lomax), -180, 180);
+
+    if (south === north || west === east) return null;
+    return { lamin: south, lamax: north, lomin: west, lomax: east };
+  }
+
+  return createBoundingBox(fallbackLat, fallbackLon);
+}
+
 function normalizeAircraft(state, userLat, userLon) {
   const [
     icao24,
@@ -97,25 +130,34 @@ function scoreAircraft(aircraft) {
   return score;
 }
 
+function numberFromKeys(source, keys) {
+  for (const key of keys) {
+    const parsed = parseNumberParam(source?.[key]);
+    if (parsed != null) return parsed;
+  }
+  return null;
+}
+
+function normalizeAirport(airport) {
+  if (!airport) return null;
+  return {
+    icao: airport.icao_code || airport.icao || null,
+    iata: airport.iata_code || airport.iata || null,
+    name: airport.name || null,
+    municipality: airport.municipality || null,
+    country: airport.country_name || airport.country || null,
+    latitude: numberFromKeys(airport, ['latitude', 'lat', 'latitude_deg']),
+    longitude: numberFromKeys(airport, ['longitude', 'lon', 'lng', 'longitude_deg'])
+  };
+}
+
 function normalizeRoute(flightroute) {
   if (!flightroute?.origin || !flightroute?.destination) return null;
   return {
     callsign: flightroute.callsign || null,
     airline: flightroute.airline?.name || null,
-    origin: {
-      icao: flightroute.origin.icao_code || null,
-      iata: flightroute.origin.iata_code || null,
-      name: flightroute.origin.name || null,
-      municipality: flightroute.origin.municipality || null,
-      country: flightroute.origin.country_name || null
-    },
-    destination: {
-      icao: flightroute.destination.icao_code || null,
-      iata: flightroute.destination.iata_code || null,
-      name: flightroute.destination.name || null,
-      municipality: flightroute.destination.municipality || null,
-      country: flightroute.destination.country_name || null
-    }
+    origin: normalizeAirport(flightroute.origin),
+    destination: normalizeAirport(flightroute.destination)
   };
 }
 
@@ -154,11 +196,15 @@ app.get('/api/flights', async (req, res) => {
   const lat = Number(req.query.lat);
   const lon = Number(req.query.lon);
 
-  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+  if (!isFiniteNumber(lat) || !isFiniteNumber(lon)) {
     return res.status(400).json({ error: 'lat and lon query params are required numbers' });
   }
 
-  const bounds = createBoundingBox(lat, lon);
+  const bounds = parseBounds(req.query, lat, lon);
+  if (!bounds) {
+    return res.status(400).json({ error: 'bounds query params must describe a non-empty map view' });
+  }
+
   const url = new URL(OPENSKY_URL);
   Object.entries(bounds).forEach(([key, value]) => url.searchParams.set(key, value));
 
@@ -183,10 +229,6 @@ app.get('/api/flights', async (req, res) => {
       ? [...aircraft].sort((a, b) => scoreAircraft(a) - scoreAircraft(b))[0]
       : null;
 
-    if (overhead) {
-      overhead.route = await fetchRouteForCallsign(overhead.callsign);
-    }
-
     res.json({
       timestamp: payload.time,
       userLocation: { lat, lon },
@@ -197,6 +239,11 @@ app.get('/api/flights', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message || 'Unknown error while fetching OpenSky data' });
   }
+});
+
+app.get('/api/routes/:callsign', async (req, res) => {
+  const route = await fetchRouteForCallsign(req.params.callsign);
+  res.json({ route });
 });
 
 app.get('*', (_req, res) => {
