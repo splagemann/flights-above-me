@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    environment:
+      VIRTUAL_HOST: flights.basti.dev
+      VIRTUAL_PORT: 3000
+      LETSENCRYPT_HOST: flights.basti.dev
+      LETSENCRYPT_EMAIL: mail@basti.dev
+    restart: unless-stopped
+    networks:
+      - proxy-tier
+    logging:
+      options:
+        max-size: "5m"
+
+networks:
+  proxy-tier:
+    external: true
+    name: nginx-proxy

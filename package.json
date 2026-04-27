@@ -1,0 +1,12 @@
+{
+  "name": "flights-above-me",
+  "version": "1.0.0",
+  "description": "Shows the aircraft most likely above you on a map using browser geolocation and OpenSky data.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
