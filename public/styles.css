@@ -120,6 +120,11 @@ button:hover { filter: brightness(1.05); }
   background: #0a1525;
 }
 
+.aircraft-icon {
+  background: none !important;
+  border: none !important;
+}
+
 @media (max-width: 920px) {
   .shell {
     grid-template-columns: 1fr;
