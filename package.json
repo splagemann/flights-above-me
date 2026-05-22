@@ -4,9 +4,14 @@
   "description": "Shows the aircraft most likely above you on a map using browser geolocation and OpenSky data.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "globals": "^16"
   }
 }

@@ -1,6 +1,9 @@
 services:
   app:
     build: .
+    image: ghcr.io/splagemann/flights-above-me:latest
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
     environment:
       VIRTUAL_HOST: flights.basti.dev
       VIRTUAL_PORT: 3000
@@ -12,6 +15,16 @@ services:
     logging:
       options:
         max-size: "5m"
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=60
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_LABEL_ENABLE=true
+    restart: unless-stopped
 
 networks:
   proxy-tier:
