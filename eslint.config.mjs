@@ -1,19 +1,19 @@
 import js from '@eslint/js';
 import globals from 'globals';
 
+const noUnusedVars = ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }];
+
 export default [
   js.configs.recommended,
   {
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.browser,
-        L: 'readonly',
-      },
-    },
-    rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
-    },
+    files: ['server.js'],
+    languageOptions: { globals: globals.node },
+    rules: { 'no-unused-vars': noUnusedVars },
+  },
+  {
+    files: ['public/**/*.js'],
+    languageOptions: { globals: { ...globals.browser, L: 'readonly' } },
+    rules: { 'no-unused-vars': noUnusedVars },
   },
   { ignores: ['node_modules/'] },
 ];

@@ -36,4 +36,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/splagemann/flights-above-me:latest
+          tags: |
+            ghcr.io/splagemann/flights-above-me:latest
+            ghcr.io/splagemann/flights-above-me:${{ github.sha }}
