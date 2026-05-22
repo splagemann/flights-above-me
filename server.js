@@ -242,8 +242,13 @@ app.get('/api/flights', async (req, res) => {
 });
 
 app.get('/api/routes/:callsign', async (req, res) => {
-  const route = await fetchRouteForCallsign(req.params.callsign);
-  res.json({ route });
+  try {
+    const route = await fetchRouteForCallsign(req.params.callsign);
+    res.json({ route });
+  } catch (error) {
+    console.error('Route fetch error:', error);
+    res.status(502).json({ error: 'Route konnte nicht geladen werden' });
+  }
 });
 
 app.get('*', (_req, res) => {
