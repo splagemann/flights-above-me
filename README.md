@@ -2,6 +2,8 @@
 
 A small web app that uses browser geolocation, Leaflet, and OpenSky data to show aircraft in the current map view and highlight the one most likely above you.
 
+A live demo is deployed at https://flights.basti.dev
+
 ## Features
 
 - shows your current location on a map
@@ -35,7 +37,7 @@ curl 'http://localhost:3000/api/flights?lat=48.2082&lon=16.3738&lamin=47.8&lamax
 
 ## Production deployment
 
-This repo contains a `Dockerfile` and `compose.yaml` for deployment behind the shared `nginx-proxy` stack on `flights.basti.dev`.
+This repo contains a `Dockerfile` and `compose.yml` for containerized deployment.
 
 ```bash
 docker compose up -d --build

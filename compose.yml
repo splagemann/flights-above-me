@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    image: ghcr.io/splagemann/flights-above-me:latest
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "5m"
