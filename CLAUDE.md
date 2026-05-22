@@ -11,7 +11,7 @@ npm install && npm start  # http://localhost:3000
 ## Deploy
 
 ```bash
-docker compose up -d --build  # behind nginx-proxy at flights.basti.dev
+docker compose up -d --build
 ```
 
 ## Agent instructions
