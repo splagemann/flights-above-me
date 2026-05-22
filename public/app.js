@@ -148,6 +148,24 @@ function buildPopupContent(aircraft, route) {
   `;
 }
 
+function createAircraftIcon(heading, isOverhead, isSelected) {
+  const color = isOverhead ? '#ffd166' : '#ff3b30';
+  const strokeColor = isSelected ? '#ffffff' : '#07111f';
+  const strokeWidth = isSelected ? 1.5 : 1;
+  const size = isOverhead || isSelected ? 28 : 22;
+  const rotation = heading ?? 0;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"><g transform="rotate(${rotation},12,12)"><path d="M12 2 L14.5 10 L22 11.5 L14.5 13.5 L16 21 L12 19 L8 21 L9.5 13.5 L2 11.5 L9.5 10 Z" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round"/></g></svg>`;
+
+  return L.divIcon({
+    html: svg,
+    className: 'aircraft-icon',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2)]
+  });
+}
+
 function getBoundsQuery() {
   const bounds = map.getBounds();
   return new URLSearchParams({
@@ -267,12 +285,8 @@ function renderAircraft(data) {
   data.aircraft.forEach((aircraft) => {
     const isOverhead = currentOverhead && aircraft.icao24 === currentOverhead.icao24;
     const isSelected = selectedFlightId === getFlightId(aircraft);
-    const marker = L.circleMarker([aircraft.latitude, aircraft.longitude], {
-      radius: isOverhead || isSelected ? 9 : 6,
-      color: isSelected ? '#ffffff' : '#07111f',
-      weight: isOverhead || isSelected ? 3 : 2,
-      fillColor: isOverhead ? '#ffd166' : '#ff3b30',
-      fillOpacity: isOverhead ? 0.95 : 0.9
+    const marker = L.marker([aircraft.latitude, aircraft.longitude], {
+      icon: createAircraftIcon(aircraft.heading, isOverhead, isSelected)
     }).bindPopup(buildPopupContent(aircraft, aircraft.route));
 
     marker.on('click', () => {
