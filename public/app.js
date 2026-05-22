@@ -29,14 +29,19 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let userMarker;
-let searchCircle;
 let aircraftLayer = L.layerGroup().addTo(map);
-let overheadLine;
+let routeLayer = L.layerGroup().addTo(map);
 let currentPosition;
+let currentFlights = [];
+let currentOverhead;
+let selectedFlightId;
+let selectedRouteRequestId = 0;
 let refreshTimer;
+let moveRefreshTimer;
+const routeCache = new Map();
 
 function formatNumber(value, digits = 0) {
-  if (value == null || Number.isNaN(value)) return '–';
+  if (value == null || Number.isNaN(value)) return '-';
   return new Intl.NumberFormat('de-AT', {
     maximumFractionDigits: digits,
     minimumFractionDigits: digits
@@ -44,33 +49,43 @@ function formatNumber(value, digits = 0) {
 }
 
 function formatDistance(km) {
-  if (km == null) return '–';
+  if (km == null) return '-';
   return `${formatNumber(km, km < 10 ? 2 : 1)} km`;
 }
 
 function formatAltitude(meters) {
-  if (meters == null) return '–';
+  if (meters == null) return '-';
   const feet = meters * 3.28084;
   return `${formatNumber(meters, 0)} m / ${formatNumber(feet, 0)} ft`;
 }
 
 function formatVelocity(ms) {
-  if (ms == null) return '–';
+  if (ms == null) return '-';
   return `${formatNumber(ms * 3.6, 0)} km/h`;
 }
 
 function formatHeading(heading) {
-  if (heading == null) return '–';
+  if (heading == null) return '-';
   return `${formatNumber(heading, 0)}°`;
 }
 
 function formatTimestamp(unixSeconds) {
-  if (!unixSeconds) return '–';
+  if (!unixSeconds) return '-';
   return new Date(unixSeconds * 1000).toLocaleTimeString('de-AT', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
   });
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
 }
 
 function setStatus(text, isError = false) {
@@ -89,79 +104,89 @@ function updateUserVisuals(lat, lon) {
       radius: 8,
       color: '#ffffff',
       weight: 2,
-      fillColor: '#2ec5ff',
-      fillOpacity: 0.9
+      fillColor: '#0077ff',
+      fillOpacity: 0.95
     }).addTo(map).bindPopup('Du bist hier');
   } else {
     userMarker.setLatLng(latLng);
   }
-
-  if (!searchCircle) {
-    searchCircle = L.circle(latLng, {
-      radius: 80000,
-      color: '#66d9ff',
-      weight: 1,
-      opacity: 0.4,
-      fillOpacity: 0.03
-    }).addTo(map);
-  } else {
-    searchCircle.setLatLng(latLng);
-  }
 }
 
-function clearAircraftVisuals() {
-  aircraftLayer.clearLayers();
-  if (overheadLine) {
-    overheadLine.remove();
-    overheadLine = null;
-  }
+function getFlightId(aircraft) {
+  return aircraft.icao24 || aircraft.callsign;
 }
 
-function renderAircraft(data) {
-  clearAircraftVisuals();
-  aircraftCountEl.textContent = data.aircraft.length;
-
-  data.aircraft.forEach((aircraft) => {
-    const isOverhead = data.overhead && aircraft.icao24 === data.overhead.icao24;
-    const marker = L.circleMarker([aircraft.latitude, aircraft.longitude], {
-      radius: isOverhead ? 10 : 5,
-      color: isOverhead ? '#ffd166' : '#95a8c2',
-      weight: isOverhead ? 3 : 1,
-      fillColor: isOverhead ? '#ffd166' : '#d8e4f5',
-      fillOpacity: isOverhead ? 0.75 : 0.25
-    }).bindPopup(`
-      <strong>${aircraft.callsign}</strong><br />
-      ${aircraft.originCountry}<br />
-      Distanz: ${formatDistance(aircraft.distanceKm)}<br />
-      Höhe: ${formatAltitude(aircraft.altitudeMeters)}
-    `);
-
-    marker.addTo(aircraftLayer);
-  });
-
-  if (data.overhead && currentPosition) {
-    overheadLine = L.polyline([
-      [currentPosition.lat, currentPosition.lon],
-      [data.overhead.latitude, data.overhead.longitude]
-    ], {
-      color: '#ffd166',
-      weight: 2,
-      dashArray: '6 10',
-      opacity: 0.8
-    }).addTo(map);
-  }
+function getRouteKey(aircraft) {
+  return aircraft.callsign?.trim()?.toUpperCase();
 }
 
 function formatAirport(airport) {
-  if (!airport) return '–';
+  if (!airport) return '-';
   const code = airport.iata || airport.icao || '???';
   const city = airport.municipality || airport.country || null;
   const name = airport.name || null;
   return [code, city, name].filter(Boolean).join(' · ');
 }
 
-function renderDetails(overhead) {
-  if (!overhead) {
+function formatRouteShort(route) {
+  if (!route) return '-';
+  const origin = route.origin?.iata || route.origin?.icao || '???';
+  const destination = route.destination?.iata || route.destination?.icao || '???';
+  return `${origin} -> ${destination}`;
+}
+
+function buildPopupContent(aircraft, route) {
+  return `
+    <div class="flight-popup">
+      <strong>${escapeHtml(aircraft.callsign)}</strong><br />
+      ${escapeHtml(aircraft.originCountry || '-')}<br />
+      Von: ${escapeHtml(formatAirport(route?.origin))}<br />
+      Nach: ${escapeHtml(formatAirport(route?.destination))}<br />
+      Distanz: ${escapeHtml(formatDistance(aircraft.distanceKm))}<br />
+      Höhe: ${escapeHtml(formatAltitude(aircraft.altitudeMeters))}
+    </div>
+  `;
+}
+
+function getBoundsQuery() {
+  const bounds = map.getBounds();
+  return new URLSearchParams({
+    lat: currentPosition.lat,
+    lon: currentPosition.lon,
+    lamin: bounds.getSouth(),
+    lamax: bounds.getNorth(),
+    lomin: bounds.getWest(),
+    lomax: bounds.getEast()
+  });
+}
+
+function clearRouteLines() {
+  routeLayer.clearLayers();
+}
+
+function drawRouteLines(aircraft, route) {
+  clearRouteLines();
+  if (!aircraft || !route) return;
+
+  const aircraftLatLng = [aircraft.latitude, aircraft.longitude];
+  const endpoints = [
+    { airport: route.origin, color: '#19d3a2' },
+    { airport: route.destination, color: '#ff7a59' }
+  ];
+
+  endpoints.forEach(({ airport, color }) => {
+    if (airport?.latitude == null || airport?.longitude == null) return;
+    L.polyline([aircraftLatLng, [airport.latitude, airport.longitude]], {
+      color,
+      weight: 3,
+      opacity: 0.9,
+      dashArray: '7 8'
+    }).addTo(routeLayer);
+  });
+}
+
+function renderDetails(aircraft) {
+  if (!aircraft) {
     emptyStateEl.classList.remove('hidden');
     detailsListEl.classList.add('hidden');
     return;
@@ -169,28 +194,123 @@ function renderDetails(overhead) {
 
   emptyStateEl.classList.add('hidden');
   detailsListEl.classList.remove('hidden');
-  fields.callsign.textContent = overhead.callsign;
-  fields.icao24.textContent = overhead.icao24;
-  fields.country.textContent = overhead.originCountry;
-  fields.route.textContent = overhead.route
-    ? `${overhead.route.origin.iata || overhead.route.origin.icao || '???'} → ${overhead.route.destination.iata || overhead.route.destination.icao || '???'}`
-    : '–';
-  fields.origin.textContent = formatAirport(overhead.route?.origin);
-  fields.destination.textContent = formatAirport(overhead.route?.destination);
-  fields.distance.textContent = formatDistance(overhead.distanceKm);
-  fields.altitude.textContent = formatAltitude(overhead.altitudeMeters);
-  fields.velocity.textContent = formatVelocity(overhead.velocity);
-  fields.heading.textContent = formatHeading(overhead.heading);
-  fields.lastContact.textContent = formatTimestamp(overhead.lastContact);
+  fields.callsign.textContent = aircraft.callsign;
+  fields.icao24.textContent = aircraft.icao24;
+  fields.country.textContent = aircraft.originCountry;
+  fields.route.textContent = formatRouteShort(aircraft.route);
+  fields.origin.textContent = formatAirport(aircraft.route?.origin);
+  fields.destination.textContent = formatAirport(aircraft.route?.destination);
+  fields.distance.textContent = formatDistance(aircraft.distanceKm);
+  fields.altitude.textContent = formatAltitude(aircraft.altitudeMeters);
+  fields.velocity.textContent = formatVelocity(aircraft.velocity);
+  fields.heading.textContent = formatHeading(aircraft.heading);
+  fields.lastContact.textContent = formatTimestamp(aircraft.lastContact);
+}
+
+async function loadRouteForFlight(aircraft) {
+  const key = getRouteKey(aircraft);
+  if (!key || key === 'UNKNOWN') return null;
+
+  if (routeCache.has(key)) {
+    return routeCache.get(key);
+  }
+
+  const response = await fetch(`/api/routes/${encodeURIComponent(key)}`);
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Route konnte nicht geladen werden');
+  }
+
+  routeCache.set(key, data.route);
+  return data.route;
+}
+
+async function selectFlight(aircraft, marker) {
+  selectedFlightId = getFlightId(aircraft);
+  const requestId = ++selectedRouteRequestId;
+  renderDetails(aircraft);
+  marker.setPopupContent(buildPopupContent(aircraft, aircraft.route));
+  marker.openPopup();
+  clearRouteLines();
+
+  try {
+    const route = await loadRouteForFlight(aircraft);
+    aircraft.route = route;
+
+    if (selectedRouteRequestId !== requestId || selectedFlightId !== getFlightId(aircraft)) return;
+
+    marker.setPopupContent(buildPopupContent(aircraft, route));
+    renderDetails(aircraft);
+    drawRouteLines(aircraft, route);
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message || 'Route konnte nicht geladen werden', true);
+  }
+}
+
+function clearAircraftVisuals() {
+  aircraftLayer.clearLayers();
+  clearRouteLines();
+}
+
+function renderAircraft(data) {
+  clearAircraftVisuals();
+  aircraftCountEl.textContent = data.aircraft.length;
+  currentFlights = data.aircraft;
+  currentOverhead = data.overhead;
+
+  if (selectedFlightId && !currentFlights.some((aircraft) => getFlightId(aircraft) === selectedFlightId)) {
+    selectedFlightId = null;
+  }
+
+  data.aircraft.forEach((aircraft) => {
+    const isOverhead = currentOverhead && aircraft.icao24 === currentOverhead.icao24;
+    const isSelected = selectedFlightId === getFlightId(aircraft);
+    const marker = L.circleMarker([aircraft.latitude, aircraft.longitude], {
+      radius: isOverhead || isSelected ? 9 : 6,
+      color: isSelected ? '#ffffff' : '#07111f',
+      weight: isOverhead || isSelected ? 3 : 2,
+      fillColor: isOverhead ? '#ffd166' : '#ff3b30',
+      fillOpacity: isOverhead ? 0.95 : 0.9
+    }).bindPopup(buildPopupContent(aircraft, aircraft.route));
+
+    marker.on('click', () => {
+      selectFlight(aircraft, marker);
+    });
+
+    marker.addTo(aircraftLayer);
+
+    if (isSelected) {
+      selectFlight(aircraft, marker);
+    }
+  });
+
+  if (!selectedFlightId) {
+    renderDetails(currentOverhead);
+    if (currentOverhead) {
+      const overhead = currentOverhead;
+      loadRouteForFlight(overhead)
+        .then((route) => {
+          overhead.route = route;
+          if (!selectedFlightId && currentOverhead?.icao24 === overhead.icao24) {
+            renderDetails(overhead);
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+        });
+    }
+  }
 }
 
 async function loadFlights() {
   if (!currentPosition) return;
 
-  setStatus('Lade Flugdaten…');
+  setStatus('Lade Flugdaten...');
 
   try {
-    const response = await fetch(`/api/flights?lat=${currentPosition.lat}&lon=${currentPosition.lon}`);
+    const response = await fetch(`/api/flights?${getBoundsQuery().toString()}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -198,9 +318,8 @@ async function loadFlights() {
     }
 
     renderAircraft(data);
-    renderDetails(data.overhead);
     updatedEl.textContent = formatTimestamp(data.timestamp || Math.floor(Date.now() / 1000));
-    setStatus(data.overhead ? 'Aktiv' : 'Keine Flugzeuge gefunden');
+    setStatus(data.aircraft.length ? 'Aktiv' : 'Keine Flugzeuge in der Kartenansicht');
   } catch (error) {
     console.error(error);
     setStatus(error.message || 'Flugdaten konnten nicht geladen werden', true);
@@ -212,13 +331,19 @@ function scheduleRefresh() {
   refreshTimer = setInterval(loadFlights, 15000);
 }
 
+function scheduleMoveRefresh() {
+  if (!currentPosition) return;
+  if (moveRefreshTimer) clearTimeout(moveRefreshTimer);
+  moveRefreshTimer = setTimeout(loadFlights, 450);
+}
+
 function initLocation() {
   if (!navigator.geolocation) {
     setStatus('Geolocation wird von diesem Browser nicht unterstützt', true);
     return;
   }
 
-  setStatus('Warte auf Standortfreigabe…');
+  setStatus('Warte auf Standortfreigabe...');
 
   navigator.geolocation.getCurrentPosition(
     (position) => {
@@ -245,4 +370,5 @@ function initLocation() {
 }
 
 refreshButton.addEventListener('click', loadFlights);
+map.on('moveend', scheduleMoveRefresh);
 initLocation();

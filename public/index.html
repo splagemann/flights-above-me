@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Flight Overhead</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -19,8 +20,9 @@
           <p class="eyebrow">POC</p>
           <h1>Flugzeug über dir</h1>
           <p class="lede">
-            Holt deinen Standort, sucht nahe Flugzeuge und markiert das Flugzeug,
-            das gerade am wahrscheinlichsten über dir unterwegs ist.
+            Holt deinen Standort, lädt Flugzeuge in der aktuellen Kartenansicht
+            und markiert das Flugzeug, das gerade am wahrscheinlichsten über dir
+            unterwegs ist.
           </p>
         </div>
 
@@ -54,8 +56,8 @@
         </section>
 
         <section class="meta">
-          <h2>In der Box</h2>
-          <p><strong id="aircraftCount">0</strong> Flugzeuge im aktuellen Suchbereich.</p>
+          <h2>In der Ansicht</h2>
+          <p><strong id="aircraftCount">0</strong> Flugzeuge in der aktuellen Kartenansicht.</p>
           <p class="hint">Datenquelle: OpenSky Network. Öffentliche Daten können lückenhaft oder verzögert sein.</p>
         </section>
       </aside>
